@@ -1,30 +1,270 @@
-.vm-wrap{
-  min-height:100vh;
-  background:linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  display:flex; flex-direction:column;
+.vm-wrap {
+  min-height: 100vh;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  display: flex;
+  flex-direction: column;
 }
-.vm-header{
-  display:flex; align-items:center; justify-content:space-between;
-  padding:1rem 2rem; background:rgba(255,255,255,.15); color:#fff;
+
+.vm-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.5rem;
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+  gap: 1rem;
+  flex-wrap: wrap;
 }
-.vm-header h1{font-size:1.5rem;}
-.btn-logout{
-  padding:.4rem 1rem; border:1px solid #fff; background:transparent; color:#fff; border-radius:.5rem; cursor:pointer;
+
+.vm-header h1 {
+  font-size: 1.5rem;
+  margin: 0;
 }
-.vm-main{flex:1; padding:2rem; overflow-y:auto;}
-.upload-area{display:flex; gap:1rem; justify-content:center;}
-.upload-area button{
-  display:flex; align-items:center; gap:.5rem; padding:.75rem 1.5rem; border:none; border-radius:.5rem; background:#fff; color:#764ba2; font-weight:600; cursor:pointer; box-shadow:0 2px 8px rgba(0,0,0,.1);
+
+.vm-header p {
+  margin: 0;
+  font-size: 0.9rem;
 }
-.guide-box{display:flex; align-items:center; gap:.5rem; background:rgba(255,255,255,.85); padding:1rem; border-radius:.5rem; margin-bottom:1rem;}
-.canvas-box{position:relative; max-width:900px; margin:0 auto; border:2px solid #fff; border-radius:.5rem; overflow:hidden; background:#f7f7f7;}
-.canvas-box canvas{width:100%; display:block;}
-.overlay{position:absolute; inset:0; background:rgba(255,255,255,.75); display:flex; align-items:center; justify-content:center; font-weight:600;}
-.actions{margin-top:1rem; display:flex; gap:1rem; flex-wrap:wrap;}
-.actions button{display:flex; align-items:center; gap:.4rem; padding:.5rem 1rem; border:1px solid #ccc; background:#fff; border-radius:.25rem; cursor:pointer;}
-.actions button.calc{background:#667eea; color:#fff; border:none;}
-.result-box{background:#fff; border-radius:.5rem; padding:1rem; margin-top:1rem; display:flex; gap:2rem; align-items:center; flex-wrap:wrap;}
-.result-box h3{margin-right:auto; font-size:1.1rem;}
-.result-box div{text-align:center;}
-.result-box span{display:block; font-size:.8rem; opacity:.8;}
-.result-box strong{font-size:1.4rem; color:#764ba2;}
+
+.btn-logout {
+  padding: 0.5rem 1rem;
+  border: 1px solid #fff;
+  background: transparent;
+  color: #fff;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  font-size: 0.9rem;
+  white-space: nowrap;
+}
+
+.btn-logout:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.vm-main {
+  flex: 1;
+  padding: 1rem;
+  overflow-y: auto;
+}
+
+.upload-area {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.upload-area button {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.5rem;
+  border: none;
+  border-radius: 0.5rem;
+  background: #fff;
+  color: #764ba2;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  font-size: 1rem;
+}
+
+.upload-area button:active {
+  transform: scale(0.98);
+}
+
+.guide-box {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: rgba(255, 255, 255, 0.9);
+  padding: 1rem;
+  border-radius: 0.5rem;
+  margin-bottom: 1rem;
+  font-size: 0.9rem;
+}
+
+.canvas-box {
+  position: relative;
+  max-width: 100%;
+  margin: 0 auto;
+  border: 2px solid #fff;
+  border-radius: 0.5rem;
+  overflow: hidden;
+  background: #f7f7f7;
+}
+
+.canvas-box canvas {
+  width: 100%;
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  font-size: 1.1rem;
+}
+
+.actions {
+  margin-top: 1rem;
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.actions button {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.25rem;
+  border: 1px solid #ccc;
+  background: #fff;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  font-size: 1rem;
+  font-weight: 500;
+}
+
+.actions button:active {
+  transform: scale(0.98);
+}
+
+.actions button.calc {
+  background: #667eea;
+  color: #fff;
+  border: none;
+}
+
+.actions button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.result-box {
+  background: #fff;
+  border-radius: 0.75rem;
+  padding: 1.5rem;
+  margin-top: 1rem;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.result-box h3 {
+  margin: 0 0 1rem 0;
+  font-size: 1.2rem;
+  color: #333;
+}
+
+.result-box > div {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.result-box > div:last-child {
+  border-bottom: none;
+}
+
+.result-box span {
+  font-size: 0.9rem;
+  color: #666;
+  font-weight: 500;
+}
+
+.result-box strong {
+  font-size: 1.5rem;
+  color: #764ba2;
+  font-weight: 700;
+}
+
+.result-box p {
+  margin: 0.5rem 0;
+  font-size: 0.9rem;
+  color: #555;
+}
+
+.hidden {
+  display: none;
+}
+
+/* Mobile Responsive */
+@media (max-width: 768px) {
+  .vm-header {
+    padding: 0.75rem 1rem;
+  }
+
+  .vm-header h1 {
+    font-size: 1.25rem;
+  }
+
+  .vm-header p {
+    font-size: 0.85rem;
+  }
+
+  .btn-logout {
+    padding: 0.4rem 0.8rem;
+    font-size: 0.85rem;
+  }
+
+  .vm-main {
+    padding: 0.75rem;
+  }
+
+  .guide-box {
+    font-size: 0.85rem;
+    padding: 0.75rem;
+  }
+
+  .upload-area button {
+    padding: 0.65rem 1.25rem;
+    font-size: 0.95rem;
+  }
+
+  .actions button {
+    padding: 0.65rem 1rem;
+    font-size: 0.95rem;
+  }
+
+  .result-box {
+    padding: 1rem;
+  }
+
+  .result-box h3 {
+    font-size: 1.1rem;
+  }
+
+  .result-box strong {
+    font-size: 1.3rem;
+  }
+
+  .result-box p {
+    font-size: 0.85rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .vm-header {
+    padding: 0.5rem 0.75rem;
+  }
+
+  .vm-header h1 {
+    font-size: 1.1rem;
+  }
+
+  .vm-main {
+    padding: 0.5rem;
+  }
+
+  .actions {
+    gap: 0.5rem;
+  }
+}

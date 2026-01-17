@@ -38,10 +38,12 @@ export default function ViewMain({ user, onLogout }) {
         const canvas = canvasRef.current;
         const ctx = canvas.getContext('2d');
         if (!image) return;
-        const maxW = window.innerWidth > 768 ? 800 : window.innerWidth - 40;
-        const scale = Math.min(1, maxW / image.width);
-        canvas.width = image.width * scale;
-        canvas.height = image.height * scale;
+
+        // QUAN TRỌNG: Canvas phải vẽ FULL SIZE gốc, không scale
+        // Chỉ dùng CSS để hiển thị nhỏ hơn trên mobile
+        canvas.width = image.width;
+        canvas.height = image.height;
+
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
 
@@ -52,8 +54,9 @@ export default function ViewMain({ user, onLogout }) {
             ctx.lineWidth = 3;
             ctx.beginPath();
             polygonPoints.forEach((p, i) => {
-                const x = p.x * scale, y = p.y * scale;
-                if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+                // Dùng tọa độ gốc, không cần scale
+                if (i === 0) ctx.moveTo(p.x, p.y);
+                else ctx.lineTo(p.x, p.y);
             });
             ctx.closePath();
             ctx.stroke();
@@ -61,10 +64,9 @@ export default function ViewMain({ user, onLogout }) {
 
             // Vẽ các đỉnh
             polygonPoints.forEach(p => {
-                const x = p.x * scale, y = p.y * scale;
                 ctx.fillStyle = '#ff0000';
                 ctx.beginPath();
-                ctx.arc(x, y, 5, 0, Math.PI * 2);
+                ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
                 ctx.fill();
             });
         }
