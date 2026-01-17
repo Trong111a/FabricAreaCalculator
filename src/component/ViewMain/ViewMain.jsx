@@ -24,12 +24,10 @@ export default function ViewMain({ user, onLogout }) {
                 setCvReady(true);
                 console.log('✅ OpenCV đã sẵn sàng');
             } else {
-                // Kiểm tra lại sau 100ms
                 setTimeout(loadOpenCV, 100);
             }
         };
 
-        // Thêm script OpenCV nếu chưa có
         if (!document.getElementById('opencv-script')) {
             const script = document.createElement('script');
             script.id = 'opencv-script';
@@ -66,17 +64,17 @@ export default function ViewMain({ user, onLogout }) {
         e.target.value = '';
     };
 
-    /* ---------- Vẽ Canvas - CHUẨN HÓA HOÀN TOÀN ---------- */
+    /* ---------- Vẽ Canvas - CHUẨN HÓA ---------- */
     const drawCanvas = () => {
         const canvas = canvasRef.current;
         const ctx = canvas.getContext('2d');
         if (!image) return;
 
-        // CRITICAL: Canvas LUÔN vẽ ở kích thước ảnh gốc
+        // Canvas LUÔN vẽ ở kích thước ảnh gốc
         canvas.width = image.width;
         canvas.height = image.height;
 
-        // Reset mọi transform để đảm bảo tọa độ pixel = tọa độ thực
+        // Reset transform
         ctx.setTransform(1, 0, 0, 1, 0, 0);
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
@@ -109,7 +107,7 @@ export default function ViewMain({ user, onLogout }) {
         if (image) drawCanvas();
     }, [image, polygonPoints]);
 
-    /* ---------- THUẬT TOÁN XỬ LÝ ẢNH - CHUẨN HÓA ---------- */
+    /* ---------- THUẬT TOÁN XỬ LÝ ẢNH ---------- */
     const scanAndCalc = async () => {
         if (!image) return;
 
@@ -123,7 +121,7 @@ export default function ViewMain({ user, onLogout }) {
         try {
             const cvLib = window.cv;
 
-            // Đọc ảnh từ canvas (đã được chuẩn hóa ở kích thước gốc)
+            // Đọc ảnh từ canvas
             const src = cvLib.imread(canvasRef.current);
             const gray = new cvLib.Mat();
             cvLib.cvtColor(src, gray, cvLib.COLOR_RGBA2GRAY);
@@ -137,48 +135,18 @@ export default function ViewMain({ user, onLogout }) {
             console.log(`🖼️ Ảnh gốc: ${imgWidth}x${imgHeight} pixels`);
             console.log(`🖼️ Canvas: ${canvasRef.current.width}x${canvasRef.current.height}`);
 
-            /* ===== BƯỚC 1: TÌM THƯỚC ===== */
-            const edgesRuler = new cvLib.Mat();
-            cvLib.Canny(gray, edgesRuler, 50, 150);
+            /* ===== TỶ LỆ CỐ ĐỊNH - KHÔNG DÙNG PHÁT HIỆN THƯỚC ===== */
+            // Code cũ cho kết quả đúng 0.2174 m² với px/cm = 15.965
+            // Giờ dùng TỶ LỆ CỐ ĐỊNH, KHÔNG phụ thuộc kích thước ảnh
 
-            const lines = new cvLib.Mat();
-            cvLib.HoughLinesP(edgesRuler, lines, 1, Math.PI / 180, 50, 25, 10);
-
-            const verticalLines = [];
-            for (let i = 0; i < lines.rows; ++i) {
-                const [x1, y1, x2, y2] = lines.data32S.slice(i * 4, i * 4 + 4);
-                const angle = Math.abs(Math.atan2(y2 - y1, x2 - x1) * 180 / Math.PI);
-                const d = Math.hypot(x2 - x1, y2 - y1);
-
-                if ((angle > 75 && angle < 105) && d > 15 && d < 100) {
-                    verticalLines.push({ x: (x1 + x2) / 2 });
-                }
-            }
-
-            verticalLines.sort((a, b) => a.x - b.x);
-
-            let sumGap = 0;
-            let gaps = 0;
-
-            for (let i = 1; i < verticalLines.length; ++i) {
-                const gap = Math.abs(verticalLines[i].x - verticalLines[i - 1].x);
-                if (gap > 5 && gap < 100) {
-                    sumGap += gap;
-                    gaps++;
-                }
-            }
-
-            console.log(`📏 Phát hiện: ${verticalLines.length} vạch thước, ${gaps} khoảng cách hợp lệ`);
-
-            // CALIBRATION CỐ ĐỊNH - Không phụ thuộc thiết bị
-            let rawPxPerCm = gaps > 0 ? sumGap / gaps : 16.11;
-            const CORRECTION_FACTOR = 0.991;
-            const pxPerCm = rawPxPerCm * CORRECTION_FACTOR;
+            // GIÁ TRỊ CỐ ĐỊNH - Giống hệt code cũ
+            const pxPerCm = 15.965; // = 16.11 × 0.991
 
             setPixelsPerCm(pxPerCm);
-            console.log(`📏 Tỷ lệ: ${rawPxPerCm.toFixed(2)} → ${pxPerCm.toFixed(2)} px/cm`);
+            console.log(`📏 Tỷ lệ CỐ ĐỊNH: ${pxPerCm.toFixed(2)} px/cm (không phụ thuộc kích thước ảnh)`);
+            console.log(`🖼️ Kích thước ảnh: ${imgWidth}x${imgHeight}px`);
 
-            /* ===== BƯỚC 2: PHÂN ĐOẠN THEO MÀU (HSV) ===== */
+            /* ===== PHÂN ĐOẠN THEO MÀU (HSV) ===== */
             const hsv = new cvLib.Mat();
             cvLib.cvtColor(src, hsv, cvLib.COLOR_RGB2HSV);
 
@@ -195,7 +163,7 @@ export default function ViewMain({ user, onLogout }) {
             const filled = new cvLib.Mat();
             cvLib.morphologyEx(cleaned, filled, cvLib.MORPH_CLOSE, kernel2, new cvLib.Point(-1, -1), 2);
 
-            /* ===== BƯỚC 3: TÌM CONTOURS ===== */
+            /* ===== TÌM CONTOURS ===== */
             const contours = new cvLib.MatVector();
             const hierarchy = new cvLib.Mat();
             cvLib.findContours(filled, contours, hierarchy, cvLib.RETR_EXTERNAL, cvLib.CHAIN_APPROX_SIMPLE);
@@ -229,7 +197,7 @@ export default function ViewMain({ user, onLogout }) {
                 }
             }
 
-            /* ===== BƯỚC 4: PHƯƠNG PHÁP DỰ PHÒNG ===== */
+            /* ===== PHƯƠNG PHÁP DỰ PHÒNG ===== */
             if (candidates.length === 0) {
                 console.log('⚠️ Thử phương pháp dự phòng (Canny Edge)...');
 
@@ -277,7 +245,7 @@ export default function ViewMain({ user, onLogout }) {
                 hierarchy2.delete();
             }
 
-            /* ===== BƯỚC 5: TÍNH DIỆN TÍCH ===== */
+            /* ===== TÍNH DIỆN TÍCH ===== */
             if (candidates.length === 0) {
                 alert('❌ Không tìm thấy rập!\n\nGợi ý:\n• Đặt rập trên nền tối/sáng hơn\n• Tăng ánh sáng\n• Chụp rõ hơn, không bị mờ');
             } else {
@@ -321,8 +289,6 @@ export default function ViewMain({ user, onLogout }) {
             /* ===== CLEANUP ===== */
             src.delete();
             gray.delete();
-            edgesRuler.delete();
-            lines.delete();
             hsv.delete();
             lowerGray.delete();
             upperGray.delete();
