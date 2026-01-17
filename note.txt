@@ -71,7 +71,7 @@ export default function ViewMain({ user, onLogout }) {
     };
     useEffect(() => { image && drawCanvas(); }, [image, polygonPoints]);
 
-    /* ---------- THUẬT TOÁN: GIỮ NGUYÊN CODE CŨ + SỬA CALIBRATION ---------- */
+    /* ---------- THUẬT TOÁN TỐI ƯU: DÙNG COLOR SEGMENTATION ---------- */
     const scanAndCalc = async () => {
         if (!image) return;
         setLoading(true);
@@ -81,7 +81,7 @@ export default function ViewMain({ user, onLogout }) {
             const gray = new cv.Mat();
             cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
 
-            /* ===== BƯỚC 1: TÌM THƯỚC (CẢI TIẾN CALIBRATION) ===== */
+            /* ===== BƯỚC 1: TÌM THƯỚC ===== */
             const edgesRuler = new cv.Mat();
             cv.Canny(gray, edgesRuler, 50, 150);
             const lines = new cv.Mat();
@@ -106,23 +106,15 @@ export default function ViewMain({ user, onLogout }) {
                     gaps++;
                 }
             }
-
-            // CALIBRATION: Điều chỉnh để đạt 0.216-0.219 m²
-            // 0.2135 m² → 0.2223 m² (với factor 0.98) = tăng quá
-            // Target: 0.2175 m² (giữa 0.216-0.219)
-            // Cần factor = sqrt(0.2135/0.2175) ≈ 0.991
-            const CORRECTION_FACTOR = 0.991; // Giảm 0.9%
-            let rawPxPerCm = gaps > 0 ? sumGap / gaps : 16.11;
-            const pxPerCm = rawPxPerCm * CORRECTION_FACTOR;
-
+            const pxPerCm = gaps > 0 ? sumGap / gaps : 35;
             setPixelsPerCm(pxPerCm);
-            console.log(`📏 Phát hiện: ${rawPxPerCm.toFixed(2)} px/cm → Sau hiệu chỉnh: ${pxPerCm.toFixed(2)} px/cm`);
 
-            /* ===== BƯỚC 2: PHÂN ĐOẠN THEO MÀU (HSV) - GIỮ NGUYÊN ===== */
+            /* ===== BƯỚC 2: PHÂN ĐOẠN THEO MÀU (HSV) ===== */
             const hsv = new cv.Mat();
             cv.cvtColor(src, hsv, cv.COLOR_RGB2HSV);
 
             // Tạo mask cho vùng màu xám/be (rập)
+            // Rập xám nhạt: H: bất kỳ, S: thấp (0-50), V: trung bình (80-220)
             const lowerGray = new cv.Mat(hsv.rows, hsv.cols, hsv.type(), [0, 0, 80, 0]);
             const upperGray = new cv.Mat(hsv.rows, hsv.cols, hsv.type(), [180, 50, 220, 255]);
             const maskGray = new cv.Mat();
@@ -174,7 +166,7 @@ export default function ViewMain({ user, onLogout }) {
                 }
             }
 
-            /* ===== BƯỚC 4: CHỌN RẬP (GIỮ NGUYÊN PHƯƠNG PHÁP DỰ PHÒNG) ===== */
+            /* ===== BƯỚC 4: CHỌN RẬP ===== */
             if (candidates.length === 0) {
                 // Thử phương pháp dự phòng: Canny Edge
                 console.log('⚠️ Thử phương pháp dự phòng...');
@@ -228,7 +220,7 @@ export default function ViewMain({ user, onLogout }) {
 
                 // Xấp xỉ đa giác
                 const approx = new cv.Mat();
-                const epsilon = 0.002 * best.perimeter; // Giữ nguyên độ chính xác cao
+                const epsilon = 0.002 * best.perimeter; // 0.2% - rất chính xác
                 cv.approxPolyDP(best.cnt, approx, epsilon, true);
 
                 const pts = [];
@@ -246,11 +238,7 @@ export default function ViewMain({ user, onLogout }) {
                     const j = (i + 1) % pts.length;
                     totalArea += pts[i].x * pts[j].y - pts[j].x * pts[i].y;
                 }
-                const areaPixels = Math.abs(totalArea) / 2;
-                const areaCm2 = areaPixels / (pxPerCm * pxPerCm);
-
-                console.log(`📐 Diện tích: ${areaPixels.toFixed(0)} px² = ${areaCm2.toFixed(2)} cm² = ${(areaCm2 / 10000).toFixed(4)} m²`);
-
+                const areaCm2 = Math.abs(totalArea) / 2 / (pxPerCm * pxPerCm);
                 setArea(areaCm2);
                 setStep('result');
 
