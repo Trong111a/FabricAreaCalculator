@@ -86,7 +86,7 @@
 
 .canvas-box {
   position: relative;
-  max-width: 100%;
+  max-width: 900px; /* Giới hạn trên laptop */
   margin: 0 auto;
   border: 2px solid #fff;
   border-radius: 0.5rem;
