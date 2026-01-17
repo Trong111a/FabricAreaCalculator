@@ -83,6 +83,10 @@ export default function ViewMain({ user, onLogout }) {
             const gray = new cv.Mat();
             cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
 
+            console.log(`📸 Kích thước ảnh: ${src.cols}x${src.rows} pixels`);
+            console.log(`📱 Thiết bị: ${window.innerWidth}x${window.innerHeight}`);
+            console.log(`🖼️ Canvas: ${canvasRef.current.width}x${canvasRef.current.height}`);
+
             /* ===== BƯỚC 1: TÌM THƯỚC (CẢI TIẾN CALIBRATION) ===== */
             const edgesRuler = new cv.Mat();
             cv.Canny(gray, edgesRuler, 50, 150);
@@ -108,6 +112,8 @@ export default function ViewMain({ user, onLogout }) {
                     gaps++;
                 }
             }
+
+            console.log(`📏 Tìm thấy ${verticalLines.length} vạch thước, ${gaps} khoảng cách hợp lệ`);
 
             // CALIBRATION: Điều chỉnh để đạt 0.216-0.219 m²
             // 0.2135 m² → 0.2223 m² (với factor 0.98) = tăng quá
