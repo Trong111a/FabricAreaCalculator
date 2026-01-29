@@ -1,4 +1,4 @@
-/* ViewMain.jsx – Fix: Hỗ trợ cảm ứng mobile + Thanh trượt điều chỉnh thước */
+/* ViewMain.jsx – Fix: UI Kết quả responsive cho mobile */
 import React, { useState, useRef, useEffect } from 'react';
 import { Camera, Upload, RotateCcw, Ruler } from 'lucide-react';
 import './ViewMain.css';
@@ -27,7 +27,6 @@ export default function ViewMain({ user, onLogout }) {
         const loadOpenCV = () => {
             if (window.cv && window.cv.Mat) {
                 setCvReady(true);
-                console.log('✅ OpenCV ready');
             } else {
                 setTimeout(loadOpenCV, 100);
             }
@@ -35,7 +34,7 @@ export default function ViewMain({ user, onLogout }) {
         if (!document.getElementById('opencv-script')) {
             const script = document.createElement('script');
             script.id = 'opencv-script';
-            script.src = 'https://docs.opencv.org/4.5.2/opencv.js';
+            script.src = 'https://docs.opencv.org/4.5.2/opencv.js ';
             script.async = true;
             script.onload = () => loadOpenCV();
             document.body.appendChild(script);
@@ -112,7 +111,6 @@ export default function ViewMain({ user, onLogout }) {
         ctx.strokeStyle = '#333';
         ctx.lineWidth = 2;
         ctx.strokeRect(-12, 0, 24, rulerLength);
-
         const cmCount = 30;
         const pxPerCm = rulerLength / cmCount;
         for (let i = 0; i <= cmCount; i++) {
@@ -145,7 +143,6 @@ export default function ViewMain({ user, onLogout }) {
         if (image) drawCanvas();
     }, [image, polygonPoints, step, rulerPos, rulerLength, rulerAngle]);
 
-    // ==================== MOUSE EVENTS (Desktop) ====================
     const handleMouseDown = (e) => {
         if (step !== 'calibrate') return;
         const canvas = canvasRef.current;
@@ -170,10 +167,9 @@ export default function ViewMain({ user, onLogout }) {
 
     const handleMouseUp = () => setIsDragging(false);
 
-    // ==================== TOUCH EVENTS (Mobile) ====================
     const handleTouchStart = (e) => {
         if (step !== 'calibrate') return;
-        e.preventDefault(); // Ngăn cuộn trang
+        e.preventDefault();
         const canvas = canvasRef.current;
         const rect = canvas.getBoundingClientRect();
         const touch = e.touches[0];
@@ -186,7 +182,7 @@ export default function ViewMain({ user, onLogout }) {
 
     const handleTouchMove = (e) => {
         if (!isDragging || step !== 'calibrate') return;
-        e.preventDefault(); // Ngăn cuộn trang
+        e.preventDefault();
         const canvas = canvasRef.current;
         const rect = canvas.getBoundingClientRect();
         const touch = e.touches[0];
@@ -202,14 +198,12 @@ export default function ViewMain({ user, onLogout }) {
         setIsDragging(false);
     };
 
-    // ==================== DRAG LOGIC ====================
     const startDrag = (x, y) => {
         const rad = (-rulerAngle * Math.PI) / 180;
         const dx = x - rulerPos.x;
         const dy = y - rulerPos.y;
         const localX = dx * Math.cos(rad) - dy * Math.sin(rad);
         const localY = dx * Math.sin(rad) + dy * Math.cos(rad);
-
         if (Math.abs(localX) < 20 && localY >= -10 && localY <= rulerLength + 10) {
             setIsDragging(true);
             setDragStart({ x: dx, y: dy });
@@ -229,7 +223,6 @@ export default function ViewMain({ user, onLogout }) {
         alert(`✅ Đã hiệu chuẩn: ${calculatedPixelsPerCm.toFixed(2)} px/cm`);
     };
 
-    /* QUÉT RẬP */
     const scanAndCalc = async () => {
         if (!rawImageData || !cvReady || !pixelsPerCm) {
             alert('⚠️ Chưa hiệu chuẩn hoặc OpenCV chưa sẵn sàng');
@@ -242,20 +235,16 @@ export default function ViewMain({ user, onLogout }) {
             const hsv = new cv.Mat();
             cv.cvtColor(src, hsv, cv.COLOR_RGBA2RGB);
             cv.cvtColor(hsv, hsv, cv.COLOR_RGB2HSV);
-
             const lowerGray = new cv.Mat(hsv.rows, hsv.cols, hsv.type(), [0, 0, 100, 0]);
             const upperGray = new cv.Mat(hsv.rows, hsv.cols, hsv.type(), [180, 50, 255, 255]);
             const mask = new cv.Mat();
             cv.inRange(hsv, lowerGray, upperGray, mask);
-
             const kernelOpen = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(3, 3));
             const cleaned = new cv.Mat();
             cv.morphologyEx(mask, cleaned, cv.MORPH_OPEN, kernelOpen, new cv.Point(-1, -1), 1);
-
             const kernelClose = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(5, 5));
             const filled = new cv.Mat();
             cv.morphologyEx(cleaned, filled, cv.MORPH_CLOSE, kernelClose, new cv.Point(-1, -1), 1);
-
             const contours = new cv.MatVector();
             const hierarchy = new cv.Mat();
             cv.findContours(filled, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
@@ -271,23 +260,18 @@ export default function ViewMain({ user, onLogout }) {
                 const area = cv.contourArea(cnt);
                 const pct = (area / imgArea) * 100;
                 if (pct < 5 || pct > 90) continue;
-
                 const rect = cv.boundingRect(cnt);
                 const peri = cv.arcLength(cnt, true);
                 const aspectRatio = Math.max(rect.width, rect.height) / Math.min(rect.width, rect.height);
-
                 const touchesBorder = (
                     rect.x <= 10 || rect.y <= 10 ||
                     rect.x + rect.width >= imgW - 10 ||
                     rect.y + rect.height >= imgH - 10
                 );
-
                 if (touchesBorder) continue;
                 if (aspectRatio > 6) continue;
-
                 const compactness = (4 * Math.PI * area) / (peri * peri);
                 const score = area * compactness;
-
                 if (score > maxScore) {
                     maxScore = score;
                     bestCnt = cnt;
@@ -295,16 +279,13 @@ export default function ViewMain({ user, onLogout }) {
             }
 
             if (!bestCnt) throw new Error('Không tìm thấy rập!');
-
             const peri = cv.arcLength(bestCnt, true);
             const approx = new cv.Mat();
             cv.approxPolyDP(bestCnt, approx, 0.002 * peri, true);
-
             const pts = [];
             for (let i = 0; i < approx.rows; ++i) {
                 pts.push({ x: approx.data32S[i * 2], y: approx.data32S[i * 2 + 1] });
             }
-
             if (pts.length < 4) {
                 const hull = new cv.Mat();
                 cv.convexHull(bestCnt, hull, false, true);
@@ -314,9 +295,7 @@ export default function ViewMain({ user, onLogout }) {
                 }
                 hull.delete();
             }
-
             setPolygonPoints(pts);
-
             let s = 0;
             for (let i = 0; i < pts.length; i++) {
                 const j = (i + 1) % pts.length;
@@ -326,11 +305,9 @@ export default function ViewMain({ user, onLogout }) {
             const areaCm2 = areaPx / (pixelsPerCm * pixelsPerCm);
             setArea(areaCm2);
             setStep('result');
-
             src.delete(); hsv.delete(); lowerGray.delete(); upperGray.delete(); mask.delete();
             kernelOpen.delete(); cleaned.delete(); kernelClose.delete(); filled.delete();
             contours.delete(); hierarchy.delete(); approx.delete();
-
         } catch (e) {
             alert(`⚠️ ${e.message}`);
         } finally {
@@ -369,7 +346,6 @@ export default function ViewMain({ user, onLogout }) {
                             📏 <strong>Bước 1: Hiệu chuẩn</strong><br />
                             <small>• Kéo thả hoặc dùng thanh trượt • 30 vạch = 30cm</small>
                         </div>
-
                         <div className="canvas-box">
                             <canvas
                                 ref={canvasRef}
@@ -383,8 +359,6 @@ export default function ViewMain({ user, onLogout }) {
                                 style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
                             />
                         </div>
-
-                        {/* THANH TRƯỢT + ĐIỀU CHỈNH */}
                         <div className="controls-panel">
                             <div className="slider-group">
                                 <label>Chiều dài thước:</label>
@@ -401,7 +375,6 @@ export default function ViewMain({ user, onLogout }) {
                                     <span className="px-cm">{(rulerLength / 30).toFixed(1)} px/cm</span>
                                 </div>
                             </div>
-
                             <div className="angle-controls">
                                 <label>Xoay thước:</label>
                                 <div className="angle-buttons">
@@ -413,7 +386,6 @@ export default function ViewMain({ user, onLogout }) {
                                 </div>
                             </div>
                         </div>
-
                         <div className="actions">
                             <button onClick={reset}><RotateCcw /> Làm lại</button>
                             <button className="calc" onClick={confirmCalibration}>
@@ -429,12 +401,10 @@ export default function ViewMain({ user, onLogout }) {
                             {step === 'scan' ? '🔍 Bước 2: Quét rập' : '✅ Kết quả'}<br />
                             <small>Tỷ lệ: <strong>{pixelsPerCm?.toFixed(2)} px/cm</strong></small>
                         </div>
-
                         <div className="canvas-box">
                             <canvas ref={canvasRef} />
                             {loading && <div className="overlay"><div className="spinner"></div>🔍 Đang quét...</div>}
                         </div>
-
                         {step === 'scan' && (
                             <div className="actions">
                                 <button onClick={reset}><RotateCcw /> Làm lại</button>
@@ -442,16 +412,27 @@ export default function ViewMain({ user, onLogout }) {
                                 <button className="calc" disabled={loading} onClick={scanAndCalc}><Ruler /> Quét & Tính</button>
                             </div>
                         )}
-
                         {step === 'result' && area !== null && (
                             <>
                                 <div className="result-box">
                                     <h3>Kết quả</h3>
                                     <div className="result-grid">
-                                        <div className="result-item"><span>Diện tích</span><strong>{area.toFixed(2)} cm²</strong></div>
-                                        <div className="result-item"><span>m²</span><strong>{(area / 10000).toFixed(4)}</strong></div>
-                                        <div className="result-item"><span>px/cm</span><strong>{pixelsPerCm?.toFixed(2)}</strong></div>
-                                        <div className="result-item"><span>Đỉnh</span><strong>{polygonPoints.length}</strong></div>
+                                        <div className="result-item">
+                                            <span>Diện tích</span>
+                                            <strong>{area.toFixed(2)} cm²</strong>
+                                        </div>
+                                        <div className="result-item">
+                                            <span>Diện tích</span>
+                                            <strong>{(area / 10000).toFixed(4)} m²</strong>
+                                        </div>
+                                        <div className="result-item">
+                                            <span>Tỷ lệ</span>
+                                            <strong>{pixelsPerCm?.toFixed(2)} px/cm</strong>
+                                        </div>
+                                        <div className="result-item">
+                                            <span>Số đỉnh</span>
+                                            <strong>{polygonPoints.length}</strong>
+                                        </div>
                                     </div>
                                 </div>
                                 <div className="actions">
@@ -474,20 +455,19 @@ export default function ViewMain({ user, onLogout }) {
                 .upload-area button:disabled { opacity: 0.5; cursor: not-allowed; }
                 .hidden { display: none; }
                 .guide-box { background: #e3f2fd; border-left: 4px solid #2196f3; padding: 15px; margin-bottom: 15px; border-radius: 8px; line-height: 1.6; }
-                .canvas-box { position: relative; display: flex; justify-content: center; background: #2d2d2d; border-radius: 12px; overflow: hidden; margin-bottom: 15px; min-height: 300px; touch-action: none; /* Quan trọng cho mobile */ }
+                .canvas-box { position: relative; display: flex; justify-content: center; background: #2d2d2d; border-radius: 12px; overflow: hidden; margin-bottom: 15px; min-height: 300px; touch-action: none; }
                 .canvas-box canvas { max-width: 100%; height: auto; display: block; }
                 .overlay { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); display: flex; flex-direction: column; align-items: center; justify-content: center; color: white; gap: 10px; }
                 .spinner { width: 40px; height: 40px; border: 4px solid rgba(255,255,255,0.3); border-top-color: white; border-radius: 50%; animation: spin 1s linear infinite; }
                 @keyframes spin { to { transform: rotate(360deg); } }
                 
-                /* CONTROLS PANEL */
                 .controls-panel { background: #f8f9fa; border-radius: 12px; padding: 20px; margin-bottom: 20px; display: flex; flex-direction: column; gap: 20px; }
                 .slider-group { display: flex; flex-direction: column; gap: 10px; }
                 .slider-group label { font-weight: 600; color: #333; font-size: 14px; }
                 .ruler-slider { width: 100%; height: 8px; border-radius: 4px; background: #ddd; outline: none; -webkit-appearance: none; }
                 .ruler-slider::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 28px; height: 28px; border-radius: 50%; background: #667eea; cursor: pointer; border: 3px solid white; box-shadow: 0 2px 6px rgba(0,0,0,0.3); }
                 .ruler-slider::-moz-range-thumb { width: 28px; height: 28px; border-radius: 50%; background: #667eea; cursor: pointer; border: 3px solid white; box-shadow: 0 2px 6px rgba(0,0,0,0.3); }
-                .ruler-info { display: flex; gap: 15px; align-items: center; }
+                .ruler-info { display: flex; gap: 15px; align-items: center; flex-wrap: wrap; }
                 .ruler-info span { font-family: monospace; background: white; padding: 6px 12px; border-radius: 6px; border: 1px solid #ddd; font-weight: 600; color: #333; }
                 .px-cm { color: #667eea !important; background: #e3f2fd !important; border-color: #667eea !important; }
                 
@@ -503,17 +483,66 @@ export default function ViewMain({ user, onLogout }) {
                 .actions button.calc { background: #28a745; color: white; border-color: #28a745; }
                 .actions button:disabled { opacity: 0.5; cursor: not-allowed; }
                 
-                .result-box { background: #d4edda; border: 1px solid #c3e6cb; border-radius: 12px; padding: 24px; margin-bottom: 20px; text-align: center; }
-                .result-box h3 { margin: 0 0 20px 0; color: #155724; }
-                .result-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 15px; }
-                .result-item { background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
-                .result-item span { display: block; font-size: 12px; color: #666; margin-bottom: 5px; text-transform: uppercase; }
-                .result-item strong { display: block; font-size: 20px; color: #28a745; }
+                /* ===== RESULT BOX - RESPONSIVE FIX ===== */
+                .result-box { background: #d4edda; border: 1px solid #c3e6cb; border-radius: 12px; padding: 24px; margin-bottom: 20px; text-align: center; width: 100%; box-sizing: border-box; }
+                .result-box h3 { margin: 0 0 20px 0; color: #155724; font-size: 1.4rem; }
+                .result-grid { 
+                    display: grid; 
+                    grid-template-columns: repeat(4, 1fr); 
+                    gap: 15px; 
+                }
+                .result-item { 
+                    background: white; 
+                    padding: 20px 10px; 
+                    border-radius: 10px; 
+                    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+                    min-width: 0;
+                    overflow: hidden;
+                }
+                .result-item span { 
+                    display: block; 
+                    font-size: 12px; 
+                    color: #666; 
+                    margin-bottom: 8px; 
+                    text-transform: uppercase;
+                    white-space: nowrap;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                }
+                .result-item strong { 
+                    display: block; 
+                    font-size: 22px; 
+                    color: #28a745;
+                    white-space: nowrap;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                }
                 
-                @media (max-width: 600px) { 
-                    .vm-header { flex-direction: column; text-align: center; } 
+                /* Tablet: 2 cột */
+                @media (max-width: 768px) {
+                    .result-grid { grid-template-columns: repeat(2, 1fr); gap: 12px; }
+                    .result-box { padding: 20px 15px; }
+                    .result-box h3 { font-size: 1.2rem; }
+                }
+                
+                /* Mobile nhỏ: 2 cột nhỏ hơn */
+                @media (max-width: 480px) {
+                    .vm-wrap { padding: 10px; }
+                    .result-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+                    .result-box { padding: 15px 10px; margin-bottom: 15px; }
+                    .result-box h3 { font-size: 1.1rem; margin-bottom: 15px; }
+                    .result-item { padding: 12px 6px; }
+                    .result-item span { font-size: 10px; margin-bottom: 4px; }
+                    .result-item strong { font-size: 16px; }
                     .controls-panel { padding: 15px; }
+                    .angle-buttons { justify-content: center; }
                     .angle-buttons button { padding: 8px 12px; font-size: 13px; }
+                    .angle-value { padding: 8px; font-size: 14px; }
+                }
+                
+                /* Mobile rất nhỏ: 1 cột */
+                @media (max-width: 320px) {
+                    .result-grid { grid-template-columns: 1fr; }
                 }
             `}</style>
         </div>
