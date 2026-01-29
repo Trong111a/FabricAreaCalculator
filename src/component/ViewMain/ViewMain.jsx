@@ -1,11 +1,11 @@
-/* ViewMain.jsx – kết quả giống nhau trên mọi laptop/điện thoại */
+/* ViewMain.jsx – Fix: Loại bỏ thước kẻ bằng lọc viền + Kernel nhỏ hơn */
 import React, { useState, useRef, useEffect } from 'react';
-import { Camera, Upload, RotateCcw, Ruler } from 'lucide-react';
+import { Camera, Upload, RotateCcw, Ruler, ZoomIn, ZoomOut } from 'lucide-react';
 import './ViewMain.css';
 
 export default function ViewMain({ user, onLogout }) {
-    const [image, setImage] = useState(null);          // để hiển thị
-    const [rawImageData, setRawImageData] = useState(null); // ImageData gốc
+    const [image, setImage] = useState(null);
+    const [rawImageData, setRawImageData] = useState(null);
     const [step, setStep] = useState('upload');
     const [polygonPoints, setPolygonPoints] = useState([]);
     const [pixelsPerCm, setPixelsPerCm] = useState(null);
@@ -13,16 +13,21 @@ export default function ViewMain({ user, onLogout }) {
     const [loading, setLoading] = useState(false);
     const [cvReady, setCvReady] = useState(false);
 
+    const [rulerPos, setRulerPos] = useState({ x: 100, y: 100 });
+    const [rulerLength, setRulerLength] = useState(300);
+    const [rulerAngle, setRulerAngle] = useState(0);
+    const [isDragging, setIsDragging] = useState(false);
+    const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+
     const canvasRef = useRef(null);
     const uploadRef = useRef(null);
     const cameraRef = useRef(null);
 
-    /* 1. Load OpenCV -------------------------------------------------------- */
     useEffect(() => {
         const loadOpenCV = () => {
             if (window.cv && window.cv.Mat) {
                 setCvReady(true);
-                console.log('✅ OpenCV đã sẵn sàng');
+                console.log('✅ OpenCV ready');
             } else {
                 setTimeout(loadOpenCV, 100);
             }
@@ -39,7 +44,6 @@ export default function ViewMain({ user, onLogout }) {
         }
     }, []);
 
-    /* 2. Nhận file – lưu cả ảnh hiển thị + ImageData gốc -------------------- */
     const handleImageUpload = (e) => {
         const file = e.target.files?.[0];
         if (!file) return;
@@ -47,16 +51,20 @@ export default function ViewMain({ user, onLogout }) {
         reader.onload = (ev) => {
             const img = new Image();
             img.onload = () => {
-                setImage(img); // để vẽ UI
-                // Canvas offline -> lấy ImageData gốc
+                setImage(img);
                 const off = document.createElement('canvas');
                 off.width = img.width;
                 off.height = img.height;
                 const octx = off.getContext('2d');
                 octx.drawImage(img, 0, 0);
                 setRawImageData(octx.getImageData(0, 0, img.width, img.height));
-                setStep('scan');
-                setPolygonPoints([]); setArea(null); setPixelsPerCm(null);
+                setStep('calibrate');
+                setPolygonPoints([]);
+                setArea(null);
+                setPixelsPerCm(null);
+                setRulerPos({ x: img.width * 0.75, y: img.height * 0.2 });
+                setRulerLength(img.height * 0.6);
+                setRulerAngle(90);
             };
             img.src = ev.target.result;
         };
@@ -64,128 +72,256 @@ export default function ViewMain({ user, onLogout }) {
         e.target.value = '';
     };
 
-    /* 3. Vẽ canvas (chỉ để hiển thị) --------------------------------------- */
     const drawCanvas = () => {
         const canvas = canvasRef.current;
         const ctx = canvas.getContext('2d');
         if (!image) return;
         canvas.width = image.width;
         canvas.height = image.height;
-        ctx.setTransform(1, 0, 0, 1, 0, 0);
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         ctx.drawImage(image, 0, 0);
+
+        if (step === 'calibrate') {
+            drawVirtualRuler(ctx);
+        }
+
         if (polygonPoints.length) {
             ctx.strokeStyle = '#00ff00';
             ctx.fillStyle = 'rgba(0,255,0,0.25)';
             ctx.lineWidth = 3;
             ctx.beginPath();
             polygonPoints.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)));
-            ctx.closePath(); ctx.stroke(); ctx.fill();
+            ctx.closePath();
+            ctx.stroke();
+            ctx.fill();
             polygonPoints.forEach(p => {
                 ctx.fillStyle = '#ff0000';
-                ctx.beginPath(); ctx.arc(p.x, p.y, 5, 0, Math.PI * 2); ctx.fill();
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
+                ctx.fill();
             });
         }
     };
-    useEffect(() => { if (image) drawCanvas(); }, [image, polygonPoints]);
 
-    /* 4. Xử lý ảnh – chỉ dùng ImageData gốc --------------------------------- */
+    const drawVirtualRuler = (ctx) => {
+        ctx.save();
+        ctx.translate(rulerPos.x, rulerPos.y);
+        ctx.rotate((rulerAngle * Math.PI) / 180);
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+        ctx.fillRect(-12, 0, 24, rulerLength);
+        ctx.strokeStyle = '#333';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(-12, 0, 24, rulerLength);
+
+        const cmCount = 30;
+        const pxPerCm = rulerLength / cmCount;
+        for (let i = 0; i <= cmCount; i++) {
+            const y = i * pxPerCm;
+            const isMajor = i % 5 === 0;
+            ctx.strokeStyle = isMajor ? '#ff0000' : '#666';
+            ctx.lineWidth = isMajor ? 2 : 1;
+            ctx.beginPath();
+            ctx.moveTo(isMajor ? -12 : -6, y);
+            ctx.lineTo(isMajor ? 12 : 6, y);
+            ctx.stroke();
+            if (isMajor && i > 0) {
+                ctx.fillStyle = '#000';
+                ctx.font = 'bold 11px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText(i.toString(), 0, y - 4);
+            }
+        }
+        ctx.fillStyle = '#00ff00';
+        ctx.beginPath();
+        ctx.arc(0, 0, 8, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#000';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.restore();
+    };
+
+    useEffect(() => {
+        if (image) drawCanvas();
+    }, [image, polygonPoints, step, rulerPos, rulerLength, rulerAngle]);
+
+    const handleMouseDown = (e) => {
+        if (step !== 'calibrate') return;
+        const canvas = canvasRef.current;
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
+        const x = (e.clientX - rect.left) * scaleX;
+        const y = (e.clientY - rect.top) * scaleY;
+
+        const rad = (-rulerAngle * Math.PI) / 180;
+        const dx = x - rulerPos.x;
+        const dy = y - rulerPos.y;
+        const localX = dx * Math.cos(rad) - dy * Math.sin(rad);
+        const localY = dx * Math.sin(rad) + dy * Math.cos(rad);
+
+        if (Math.abs(localX) < 20 && localY >= -10 && localY <= rulerLength + 10) {
+            setIsDragging(true);
+            setDragStart({ x: dx, y: dy });
+        }
+    };
+
+    const handleMouseMove = (e) => {
+        if (!isDragging || step !== 'calibrate') return;
+        const canvas = canvasRef.current;
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
+        const x = (e.clientX - rect.left) * scaleX;
+        const y = (e.clientY - rect.top) * scaleY;
+        setRulerPos({ x: x - dragStart.x, y: y - dragStart.y });
+    };
+
+    const handleMouseUp = () => setIsDragging(false);
+
+    const adjustRulerLength = (delta) => {
+        setRulerLength(prev => Math.max(100, Math.min(image?.height || 1000, prev + delta)));
+    };
+    const rotateRuler = (delta) => setRulerAngle(prev => (prev + delta) % 360);
+
+    const confirmCalibration = () => {
+        const calculatedPixelsPerCm = rulerLength / 30;
+        setPixelsPerCm(calculatedPixelsPerCm);
+        setStep('scan');
+        alert(`✅ Đã hiệu chuẩn: ${calculatedPixelsPerCm.toFixed(2)} px/cm`);
+    };
+
+    /* 7. QUÉT RẬP – ĐÃ FIX: Kernel nhỏ hơn + Lọc viền */
     const scanAndCalc = async () => {
-        if (!rawImageData || !cvReady) {
-            alert('⚠️ Chưa có ảnh hoặc OpenCV chưa sẵn sàng');
+        if (!rawImageData || !cvReady || !pixelsPerCm) {
+            alert('⚠️ Chưa hiệu chuẩn hoặc OpenCV chưa sẵn sàng');
             return;
         }
         setLoading(true);
         try {
             const cv = window.cv;
-            /* đọc ảnh từ ImageData gốc */
             const src = cv.matFromImageData(rawImageData);
-            const gray = new cv.Mat();
-            cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
-
-            /* 4.1 Tìm thước */
-            const edgesRuler = new cv.Mat();
-            cv.Canny(gray, edgesRuler, 50, 150);
-            const lines = new cv.Mat();
-            cv.HoughLinesP(edgesRuler, lines, 1, Math.PI / 180, 50, 25, 10);
-            const vLines = [];
-            for (let i = 0; i < lines.rows; ++i) {
-                const [x1, y1, x2, y2] = lines.data32S.slice(i * 4, i * 4 + 4);
-                const ang = Math.abs(Math.atan2(y2 - y1, x2 - x1) * 180 / Math.PI);
-                const d = Math.hypot(x2 - x1, y2 - y1);
-                if (ang > 75 && ang < 105 && d > 15 && d < 100) vLines.push((x1 + x2) / 2);
-            }
-            vLines.sort((a, b) => a - b);
-            let sumGap = 0, gaps = 0;
-            for (let i = 1; i < vLines.length; ++i) {
-                const gap = vLines[i] - vLines[i - 1];
-                if (gap > 5 && gap < 100) { sumGap += gap; gaps++; }
-            }
-            let rawPpc = gaps > 0 ? sumGap / gaps : 16.11;
-            const CORRECTION = 0.991; // hiệu chỉnh cứng
-            const pxPerCm = rawPpc * CORRECTION;
-            setPixelsPerCm(pxPerCm);
-
-            /* 4.2 Phân đoạn màu */
             const hsv = new cv.Mat();
-            cv.cvtColor(src, hsv, cv.COLOR_RGB2HSV);
-            const lowerGray = new cv.Mat(hsv.rows, hsv.cols, hsv.type(), [0, 0, 80, 0]);
-            const upperGray = new cv.Mat(hsv.rows, hsv.cols, hsv.type(), [180, 50, 220, 255]);
-            const maskGray = new cv.Mat();
-            cv.inRange(hsv, lowerGray, upperGray, maskGray);
-            const kernel1 = cv.getStructuringElement(cv.MORPH_ELLIPSE, new cv.Size(3, 3));
-            const cleaned = new cv.Mat();
-            cv.morphologyEx(maskGray, cleaned, cv.MORPH_OPEN, kernel1);
-            const kernel2 = cv.getStructuringElement(cv.MORPH_ELLIPSE, new cv.Size(7, 7));
-            const filled = new cv.Mat();
-            cv.morphologyEx(cleaned, filled, cv.MORPH_CLOSE, kernel2, new cv.Point(-1, -1), 2);
+            cv.cvtColor(src, hsv, cv.COLOR_RGBA2RGB);
+            cv.cvtColor(hsv, hsv, cv.COLOR_RGB2HSV);
 
-            /* 4.3 Contours */
+            // Phân đoạn màu xám/trắng (rập + thước đều màu này)
+            const lowerGray = new cv.Mat(hsv.rows, hsv.cols, hsv.type(), [0, 0, 100, 0]);
+            const upperGray = new cv.Mat(hsv.rows, hsv.cols, hsv.type(), [180, 50, 255, 255]);
+            const mask = new cv.Mat();
+            cv.inRange(hsv, lowerGray, upperGray, mask);
+
+            // Làm sạch nhiễu nhỏ
+            const kernelOpen = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(3, 3));
+            const cleaned = new cv.Mat();
+            cv.morphologyEx(mask, cleaned, cv.MORPH_OPEN, kernelOpen, new cv.Point(-1, -1), 1);
+
+            // Đóng lỗ nhỏ nhưng KHÔNG nối liền rập và thước
+            // Kernel 5x5 thay vì 9x9 để tránh merge
+            const kernelClose = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(5, 5));
+            const filled = new cv.Mat();
+            cv.morphologyEx(cleaned, filled, cv.MORPH_CLOSE, kernelClose, new cv.Point(-1, -1), 1);
+
+            // Tìm contours
             const contours = new cv.MatVector();
             const hierarchy = new cv.Mat();
             cv.findContours(filled, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+
+            let bestCnt = null;
+            let maxScore = 0;
             const imgArea = src.cols * src.rows;
-            const candidates = [];
+            const imgW = src.cols;
+            const imgH = src.rows;
+
+            console.log(`🔍 Tìm thấy ${contours.size()} contours`);
+
             for (let i = 0; i < contours.size(); ++i) {
                 const cnt = contours.get(i);
-                const a = cv.contourArea(cnt);
-                const pct = (a / imgArea) * 100;
-                if (pct < 5 || pct > 70) continue;
-                const peri = cv.arcLength(cnt, true);
-                const rect = cv.boundingRect(cnt);
-                const compactness = (4 * Math.PI * a) / (peri * peri);
-                const aspectRatio = Math.max(rect.width, rect.height) / Math.min(rect.width, rect.height);
-                if (compactness > 0.1 && aspectRatio < 15) candidates.push({ cnt, a, peri });
-            }
-            if (!candidates.length) throw new Error('Không tìm thấy rập');
-            candidates.sort((a, b) => b.a - a.a);
-            const best = candidates[0];
+                const area = cv.contourArea(cnt);
+                const pct = (area / imgArea) * 100;
 
-            /* 4.4 Đa giác */
+                // Bỏ qua quá nhỏ hoặc quá lớn
+                if (pct < 5 || pct > 90) {
+                    console.log(`  #${i}: Bỏ qua (diện tích ${pct.toFixed(1)}%)`);
+                    continue;
+                }
+
+                const rect = cv.boundingRect(cnt);
+                const peri = cv.arcLength(cnt, true);
+                const aspectRatio = Math.max(rect.width, rect.height) / Math.min(rect.width, rect.height);
+
+                // FIX 1: Bỏ qua nếu chạm viền ảnh (thước kẻ thường nằm sát mép)
+                const touchesBorder = (
+                    rect.x <= 10 ||
+                    rect.y <= 10 ||
+                    rect.x + rect.width >= imgW - 10 ||
+                    rect.y + rect.height >= imgH - 10
+                );
+
+                if (touchesBorder) {
+                    console.log(`  #${i}: Bỏ qua (chạm viền - có thể là thước)`);
+                    continue;
+                }
+
+                // FIX 2: Loại bỏ vật thể quá dài (aspect ratio > 6) 
+                if (aspectRatio > 6) {
+                    console.log(`  #${i}: Bỏ qua (tỷ lệ ${aspectRatio.toFixed(1)}:1 quá dài)`);
+                    continue;
+                }
+
+                const compactness = (4 * Math.PI * area) / (peri * peri);
+                const score = area * compactness; // Ưu tiên diện tích lớn + đầy đặn
+
+                console.log(`  #${i}: Score=${score.toFixed(0)}, Area=${area.toFixed(0)}, Ratio=${aspectRatio.toFixed(1)}`);
+
+                if (score > maxScore) {
+                    maxScore = score;
+                    bestCnt = cnt;
+                }
+            }
+
+            if (!bestCnt) {
+                throw new Error('Không tìm thấy rập! Hãy đảm bảo:\n1. Rập không chạm viền ảnh\n2. Rập có màu xám/kem khác nền gỗ nâu\n3. Thước kẻ nằm ngoài rập (không đè lên)');
+            }
+
+            // Xấp xỉ đa giác
+            const peri = cv.arcLength(bestCnt, true);
             const approx = new cv.Mat();
-            const eps = 0.002 * best.peri;
-            cv.approxPolyDP(best.cnt, approx, eps, true);
+            cv.approxPolyDP(bestCnt, approx, 0.002 * peri, true);
+
             const pts = [];
             for (let i = 0; i < approx.rows; ++i) {
                 pts.push({ x: approx.data32S[i * 2], y: approx.data32S[i * 2 + 1] });
             }
+
+            if (pts.length < 4) {
+                const hull = new cv.Mat();
+                cv.convexHull(bestCnt, hull, false, true);
+                pts.length = 0;
+                for (let i = 0; i < hull.data32S.length; i += 2) {
+                    pts.push({ x: hull.data32S[i], y: hull.data32S[i + 1] });
+                }
+                hull.delete();
+            }
+
             setPolygonPoints(pts);
 
-            /* 4.5 Diện tích */
+            // Tính diện tích
             let s = 0;
             for (let i = 0; i < pts.length; i++) {
                 const j = (i + 1) % pts.length;
                 s += pts[i].x * pts[j].y - pts[j].x * pts[i].y;
             }
-            const areaCm2 = Math.abs(s) / 2 / (pxPerCm * pxPerCm);
+            const areaPx = Math.abs(s) / 2;
+            const areaCm2 = areaPx / (pixelsPerCm * pixelsPerCm);
             setArea(areaCm2);
             setStep('result');
 
-            /* 4.6 Dọn rác */
-            src.delete(); gray.delete(); edgesRuler.delete(); lines.delete();
-            hsv.delete(); lowerGray.delete(); upperGray.delete(); maskGray.delete();
-            kernel1.delete(); cleaned.delete(); kernel2.delete(); filled.delete();
+            // Cleanup
+            src.delete(); hsv.delete(); lowerGray.delete(); upperGray.delete(); mask.delete();
+            kernelOpen.delete(); cleaned.delete(); kernelClose.delete(); filled.delete();
             contours.delete(); hierarchy.delete(); approx.delete();
+
         } catch (e) {
             console.error(e);
             alert(`⚠️ ${e.message}`);
@@ -199,12 +335,11 @@ export default function ViewMain({ user, onLogout }) {
         setPolygonPoints([]); setArea(null); setPixelsPerCm(null);
     };
 
-    /* 5. UI ------------------------------------------------------------------ */
     return (
         <div className="vm-wrap">
             <header className="vm-header">
                 <h1>🎯 Tính Diện Tích Rập</h1>
-                <p>Xin chào, <strong>{user.name}</strong></p>
+                <p>Xin chào, <strong>{user?.name || 'User'}</strong></p>
                 <button className="btn-logout" onClick={onLogout}>Đăng xuất</button>
             </header>
 
@@ -220,32 +355,104 @@ export default function ViewMain({ user, onLogout }) {
                     </div>
                 )}
 
-                {image && (
+                {step === 'calibrate' && image && (
                     <>
-                        <div className="guide-box">💡 Nhấn "Quét & tính" để hệ thống tự động nhận diện rập</div>
-
-                        <div className="canvas-box">
-                            <canvas ref={canvasRef} />
-                            {loading && <div className="overlay">🔍 Đang quét...</div>}
+                        <div className="guide-box">
+                            📏 <strong>Bước 1: Hiệu chuẩn</strong><br />
+                            <small>Kéo thước ảo cho khớp với thước thật (30cm)</small>
                         </div>
-
+                        <div className="canvas-box">
+                            <canvas ref={canvasRef} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onMouseLeave={handleMouseUp} style={{ cursor: isDragging ? 'grabbing' : 'grab' }} />
+                        </div>
+                        <div className="ruler-controls">
+                            <div className="control-group">
+                                <label>Chiều dài:</label>
+                                <button onClick={() => adjustRulerLength(-20)}><ZoomOut size={16} /></button>
+                                <span>{Math.round(rulerLength)}px</span>
+                                <button onClick={() => adjustRulerLength(20)}><ZoomIn size={16} /></button>
+                            </div>
+                            <div className="control-group">
+                                <label>Xoay:</label>
+                                <button onClick={() => rotateRuler(-5)}>↶ -5°</button>
+                                <span>{rulerAngle}°</span>
+                                <button onClick={() => rotateRuler(5)}>↷ +5°</button>
+                                <button onClick={() => setRulerAngle(90)}>90°</button>
+                            </div>
+                        </div>
                         <div className="actions">
                             <button onClick={reset}><RotateCcw /> Làm lại</button>
-                            <button className="calc" disabled={loading || !cvReady} onClick={scanAndCalc}><Ruler /> Quét & tính</button>
+                            <button className="calc" onClick={confirmCalibration}>✓ Xác nhận ({(rulerLength / 30).toFixed(1)} px/cm)</button>
                         </div>
+                    </>
+                )}
 
-                        {step === 'result' && area !== null && (
-                            <div className="result-box">
-                                <h3>✅ Kết quả</h3>
-                                <div><span>cm²</span><strong>{area.toFixed(2)}</strong></div>
-                                <div><span>m²</span><strong>{(area / 10000).toFixed(4)}</strong></div>
-                                <p>📏 Tỷ lệ: {pixelsPerCm?.toFixed(2)} px/cm</p>
-                                <p>📐 Số đỉnh: {polygonPoints.length}</p>
+                {step === 'scan' && image && (
+                    <>
+                        <div className="guide-box">
+                            🔍 <strong>Bước 2: Quét rập</strong><br />
+                            <small>Tỷ lệ: {pixelsPerCm?.toFixed(2)} px/cm | Tự động loại bỏ vật thể chạm viền (thước kẻ)</small>
+                        </div>
+                        <div className="canvas-box">
+                            <canvas ref={canvasRef} />
+                            {loading && <div className="overlay"><div className="spinner"></div>🔍 Đang quét...</div>}
+                        </div>
+                        <div className="actions">
+                            <button onClick={reset}><RotateCcw /> Làm lại</button>
+                            <button onClick={() => setStep('calibrate')}>← Hiệu chuẩn lại</button>
+                            <button className="calc" disabled={loading} onClick={scanAndCalc}><Ruler /> Quét & Tính</button>
+                        </div>
+                    </>
+                )}
+
+                {step === 'result' && area !== null && (
+                    <>
+                        <div className="canvas-box"><canvas ref={canvasRef} /></div>
+                        <div className="result-box">
+                            <h3>✅ Kết quả</h3>
+                            <div className="result-grid">
+                                <div className="result-item"><span>Diện tích</span><strong>{area.toFixed(2)} cm²</strong></div>
+                                <div className="result-item"><span>Diện tích</span><strong>{(area / 10000).toFixed(4)} m²</strong></div>
+                                <div className="result-item"><span>Tỷ lệ</span><strong>{pixelsPerCm?.toFixed(2)} px/cm</strong></div>
+                                <div className="result-item"><span>Số đỉnh</span><strong>{polygonPoints.length}</strong></div>
                             </div>
-                        )}
+                        </div>
+                        <div className="actions">
+                            <button onClick={reset}><RotateCcw /> Đo rập khác</button>
+                            <button onClick={() => { setStep('scan'); setPolygonPoints([]); setArea(null); }}>← Quét lại</button>
+                        </div>
                     </>
                 )}
             </main>
+
+            <style jsx>{`
+                .vm-wrap { max-width: 1200px; margin: 0 auto; padding: 20px; font-family: system-ui, sans-serif; }
+                .vm-header { display: flex; justify-content: space-between; align-items: center; padding: 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 12px; margin-bottom: 20px; flex-wrap: wrap; gap: 10px; }
+                .btn-logout { padding: 8px 16px; background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3); color: white; border-radius: 6px; cursor: pointer; }
+                .cv-loading { text-align: center; padding: 40px; background: #f8f9fa; border-radius: 12px; margin-bottom: 20px; color: #666; }
+                .upload-area { display: flex; gap: 20px; justify-content: center; padding: 60px 20px; background: #f8f9fa; border: 3px dashed #ddd; border-radius: 12px; flex-wrap: wrap; }
+                .upload-area button { display: flex; align-items: center; gap: 8px; padding: 16px 32px; font-size: 16px; border: none; border-radius: 8px; background: #667eea; color: white; cursor: pointer; }
+                .upload-area button:disabled { opacity: 0.5; cursor: not-allowed; }
+                .hidden { display: none; }
+                .guide-box { background: #e3f2fd; border-left: 4px solid #2196f3; padding: 15px; margin-bottom: 15px; border-radius: 8px; line-height: 1.6; }
+                .canvas-box { position: relative; display: flex; justify-content: center; background: #2d2d2d; border-radius: 12px; overflow: hidden; margin-bottom: 15px; min-height: 300px; }
+                .canvas-box canvas { max-width: 100%; height: auto; display: block; }
+                .overlay { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); display: flex; flex-direction: column; align-items: center; justify-content: center; color: white; gap: 10px; }
+                .spinner { width: 40px; height: 40px; border: 4px solid rgba(255,255,255,0.3); border-top-color: white; border-radius: 50%; animation: spin 1s linear infinite; }
+                @keyframes spin { to { transform: rotate(360deg); } }
+                .ruler-controls { display: flex; flex-direction: column; gap: 12px; padding: 20px; background: #f8f9fa; border-radius: 12px; margin-bottom: 15px; }
+                .control-group { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+                .control-group label { font-weight: 600; min-width: 100px; color: #333; }
+                .control-group span { min-width: 70px; text-align: center; font-family: monospace; background: white; padding: 6px; border-radius: 6px; border: 1px solid #ddd; }
+                .control-group button { padding: 8px 16px; border: 1px solid #ddd; background: white; border-radius: 6px; cursor: pointer; }
+                .actions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 20px; }
+                .actions button { display: flex; align-items: center; gap: 6px; padding: 12px 24px; border: 1px solid #ddd; background: white; border-radius: 8px; cursor: pointer; }
+                .actions button.calc { background: #28a745; color: white; border-color: #28a745; }
+                .result-box { background: #d4edda; border: 1px solid #c3e6cb; border-radius: 12px; padding: 24px; margin-bottom: 20px; text-align: center; }
+                .result-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 15px; }
+                .result-item { background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+                .result-item span { display: block; font-size: 12px; color: #666; margin-bottom: 5px; }
+                .result-item strong { display: block; font-size: 22px; color: #28a745; }
+            `}</style>
         </div>
     );
 }
