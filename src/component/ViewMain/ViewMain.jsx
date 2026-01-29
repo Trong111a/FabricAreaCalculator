@@ -1,6 +1,6 @@
-/* ViewMain.jsx – Fix: Loại bỏ thước kẻ bằng lọc viền + Kernel nhỏ hơn */
+/* ViewMain.jsx – Fix: Hỗ trợ cảm ứng mobile + Thanh trượt điều chỉnh thước */
 import React, { useState, useRef, useEffect } from 'react';
-import { Camera, Upload, RotateCcw, Ruler, ZoomIn, ZoomOut } from 'lucide-react';
+import { Camera, Upload, RotateCcw, Ruler } from 'lucide-react';
 import './ViewMain.css';
 
 export default function ViewMain({ user, onLogout }) {
@@ -145,6 +145,7 @@ export default function ViewMain({ user, onLogout }) {
         if (image) drawCanvas();
     }, [image, polygonPoints, step, rulerPos, rulerLength, rulerAngle]);
 
+    // ==================== MOUSE EVENTS (Desktop) ====================
     const handleMouseDown = (e) => {
         if (step !== 'calibrate') return;
         const canvas = canvasRef.current;
@@ -153,7 +154,56 @@ export default function ViewMain({ user, onLogout }) {
         const scaleY = canvas.height / rect.height;
         const x = (e.clientX - rect.left) * scaleX;
         const y = (e.clientY - rect.top) * scaleY;
+        startDrag(x, y);
+    };
 
+    const handleMouseMove = (e) => {
+        if (!isDragging || step !== 'calibrate') return;
+        const canvas = canvasRef.current;
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
+        const x = (e.clientX - rect.left) * scaleX;
+        const y = (e.clientY - rect.top) * scaleY;
+        doDrag(x, y);
+    };
+
+    const handleMouseUp = () => setIsDragging(false);
+
+    // ==================== TOUCH EVENTS (Mobile) ====================
+    const handleTouchStart = (e) => {
+        if (step !== 'calibrate') return;
+        e.preventDefault(); // Ngăn cuộn trang
+        const canvas = canvasRef.current;
+        const rect = canvas.getBoundingClientRect();
+        const touch = e.touches[0];
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
+        const x = (touch.clientX - rect.left) * scaleX;
+        const y = (touch.clientY - rect.top) * scaleY;
+        startDrag(x, y);
+    };
+
+    const handleTouchMove = (e) => {
+        if (!isDragging || step !== 'calibrate') return;
+        e.preventDefault(); // Ngăn cuộn trang
+        const canvas = canvasRef.current;
+        const rect = canvas.getBoundingClientRect();
+        const touch = e.touches[0];
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
+        const x = (touch.clientX - rect.left) * scaleX;
+        const y = (touch.clientY - rect.top) * scaleY;
+        doDrag(x, y);
+    };
+
+    const handleTouchEnd = (e) => {
+        e.preventDefault();
+        setIsDragging(false);
+    };
+
+    // ==================== DRAG LOGIC ====================
+    const startDrag = (x, y) => {
         const rad = (-rulerAngle * Math.PI) / 180;
         const dx = x - rulerPos.x;
         const dy = y - rulerPos.y;
@@ -166,23 +216,11 @@ export default function ViewMain({ user, onLogout }) {
         }
     };
 
-    const handleMouseMove = (e) => {
-        if (!isDragging || step !== 'calibrate') return;
-        const canvas = canvasRef.current;
-        const rect = canvas.getBoundingClientRect();
-        const scaleX = canvas.width / rect.width;
-        const scaleY = canvas.height / rect.height;
-        const x = (e.clientX - rect.left) * scaleX;
-        const y = (e.clientY - rect.top) * scaleY;
+    const doDrag = (x, y) => {
         setRulerPos({ x: x - dragStart.x, y: y - dragStart.y });
     };
 
-    const handleMouseUp = () => setIsDragging(false);
-
-    const adjustRulerLength = (delta) => {
-        setRulerLength(prev => Math.max(100, Math.min(image?.height || 1000, prev + delta)));
-    };
-    const rotateRuler = (delta) => setRulerAngle(prev => (prev + delta) % 360);
+    const rotateRuler = (delta) => setRulerAngle(prev => (prev + delta + 360) % 360);
 
     const confirmCalibration = () => {
         const calculatedPixelsPerCm = rulerLength / 30;
@@ -191,7 +229,7 @@ export default function ViewMain({ user, onLogout }) {
         alert(`✅ Đã hiệu chuẩn: ${calculatedPixelsPerCm.toFixed(2)} px/cm`);
     };
 
-    /* 7. QUÉT RẬP – ĐÃ FIX: Kernel nhỏ hơn + Lọc viền */
+    /* QUÉT RẬP */
     const scanAndCalc = async () => {
         if (!rawImageData || !cvReady || !pixelsPerCm) {
             alert('⚠️ Chưa hiệu chuẩn hoặc OpenCV chưa sẵn sàng');
@@ -205,24 +243,19 @@ export default function ViewMain({ user, onLogout }) {
             cv.cvtColor(src, hsv, cv.COLOR_RGBA2RGB);
             cv.cvtColor(hsv, hsv, cv.COLOR_RGB2HSV);
 
-            // Phân đoạn màu xám/trắng (rập + thước đều màu này)
             const lowerGray = new cv.Mat(hsv.rows, hsv.cols, hsv.type(), [0, 0, 100, 0]);
             const upperGray = new cv.Mat(hsv.rows, hsv.cols, hsv.type(), [180, 50, 255, 255]);
             const mask = new cv.Mat();
             cv.inRange(hsv, lowerGray, upperGray, mask);
 
-            // Làm sạch nhiễu nhỏ
             const kernelOpen = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(3, 3));
             const cleaned = new cv.Mat();
             cv.morphologyEx(mask, cleaned, cv.MORPH_OPEN, kernelOpen, new cv.Point(-1, -1), 1);
 
-            // Đóng lỗ nhỏ nhưng KHÔNG nối liền rập và thước
-            // Kernel 5x5 thay vì 9x9 để tránh merge
             const kernelClose = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(5, 5));
             const filled = new cv.Mat();
             cv.morphologyEx(cleaned, filled, cv.MORPH_CLOSE, kernelClose, new cv.Point(-1, -1), 1);
 
-            // Tìm contours
             const contours = new cv.MatVector();
             const hierarchy = new cv.Mat();
             cv.findContours(filled, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
@@ -233,46 +266,27 @@ export default function ViewMain({ user, onLogout }) {
             const imgW = src.cols;
             const imgH = src.rows;
 
-            console.log(`🔍 Tìm thấy ${contours.size()} contours`);
-
             for (let i = 0; i < contours.size(); ++i) {
                 const cnt = contours.get(i);
                 const area = cv.contourArea(cnt);
                 const pct = (area / imgArea) * 100;
-
-                // Bỏ qua quá nhỏ hoặc quá lớn
-                if (pct < 5 || pct > 90) {
-                    console.log(`  #${i}: Bỏ qua (diện tích ${pct.toFixed(1)}%)`);
-                    continue;
-                }
+                if (pct < 5 || pct > 90) continue;
 
                 const rect = cv.boundingRect(cnt);
                 const peri = cv.arcLength(cnt, true);
                 const aspectRatio = Math.max(rect.width, rect.height) / Math.min(rect.width, rect.height);
 
-                // FIX 1: Bỏ qua nếu chạm viền ảnh (thước kẻ thường nằm sát mép)
                 const touchesBorder = (
-                    rect.x <= 10 ||
-                    rect.y <= 10 ||
+                    rect.x <= 10 || rect.y <= 10 ||
                     rect.x + rect.width >= imgW - 10 ||
                     rect.y + rect.height >= imgH - 10
                 );
 
-                if (touchesBorder) {
-                    console.log(`  #${i}: Bỏ qua (chạm viền - có thể là thước)`);
-                    continue;
-                }
-
-                // FIX 2: Loại bỏ vật thể quá dài (aspect ratio > 6) 
-                if (aspectRatio > 6) {
-                    console.log(`  #${i}: Bỏ qua (tỷ lệ ${aspectRatio.toFixed(1)}:1 quá dài)`);
-                    continue;
-                }
+                if (touchesBorder) continue;
+                if (aspectRatio > 6) continue;
 
                 const compactness = (4 * Math.PI * area) / (peri * peri);
-                const score = area * compactness; // Ưu tiên diện tích lớn + đầy đặn
-
-                console.log(`  #${i}: Score=${score.toFixed(0)}, Area=${area.toFixed(0)}, Ratio=${aspectRatio.toFixed(1)}`);
+                const score = area * compactness;
 
                 if (score > maxScore) {
                     maxScore = score;
@@ -280,11 +294,8 @@ export default function ViewMain({ user, onLogout }) {
                 }
             }
 
-            if (!bestCnt) {
-                throw new Error('Không tìm thấy rập! Hãy đảm bảo:\n1. Rập không chạm viền ảnh\n2. Rập có màu xám/kem khác nền gỗ nâu\n3. Thước kẻ nằm ngoài rập (không đè lên)');
-            }
+            if (!bestCnt) throw new Error('Không tìm thấy rập!');
 
-            // Xấp xỉ đa giác
             const peri = cv.arcLength(bestCnt, true);
             const approx = new cv.Mat();
             cv.approxPolyDP(bestCnt, approx, 0.002 * peri, true);
@@ -306,7 +317,6 @@ export default function ViewMain({ user, onLogout }) {
 
             setPolygonPoints(pts);
 
-            // Tính diện tích
             let s = 0;
             for (let i = 0; i < pts.length; i++) {
                 const j = (i + 1) % pts.length;
@@ -317,13 +327,11 @@ export default function ViewMain({ user, onLogout }) {
             setArea(areaCm2);
             setStep('result');
 
-            // Cleanup
             src.delete(); hsv.delete(); lowerGray.delete(); upperGray.delete(); mask.delete();
             kernelOpen.delete(); cleaned.delete(); kernelClose.delete(); filled.delete();
             contours.delete(); hierarchy.delete(); approx.delete();
 
         } catch (e) {
-            console.error(e);
             alert(`⚠️ ${e.message}`);
         } finally {
             setLoading(false);
@@ -359,67 +367,99 @@ export default function ViewMain({ user, onLogout }) {
                     <>
                         <div className="guide-box">
                             📏 <strong>Bước 1: Hiệu chuẩn</strong><br />
-                            <small>Kéo thước ảo cho khớp với thước thật (30cm)</small>
+                            <small>• Kéo thả hoặc dùng thanh trượt • 30 vạch = 30cm</small>
                         </div>
+
                         <div className="canvas-box">
-                            <canvas ref={canvasRef} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onMouseLeave={handleMouseUp} style={{ cursor: isDragging ? 'grabbing' : 'grab' }} />
+                            <canvas
+                                ref={canvasRef}
+                                onMouseDown={handleMouseDown}
+                                onMouseMove={handleMouseMove}
+                                onMouseUp={handleMouseUp}
+                                onMouseLeave={handleMouseUp}
+                                onTouchStart={handleTouchStart}
+                                onTouchMove={handleTouchMove}
+                                onTouchEnd={handleTouchEnd}
+                                style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
+                            />
                         </div>
-                        <div className="ruler-controls">
-                            <div className="control-group">
-                                <label>Chiều dài:</label>
-                                <button onClick={() => adjustRulerLength(-20)}><ZoomOut size={16} /></button>
-                                <span>{Math.round(rulerLength)}px</span>
-                                <button onClick={() => adjustRulerLength(20)}><ZoomIn size={16} /></button>
+
+                        {/* THANH TRƯỢT + ĐIỀU CHỈNH */}
+                        <div className="controls-panel">
+                            <div className="slider-group">
+                                <label>Chiều dài thước:</label>
+                                <input
+                                    type="range"
+                                    min="100"
+                                    max={image?.height || 800}
+                                    value={rulerLength}
+                                    onChange={(e) => setRulerLength(Number(e.target.value))}
+                                    className="ruler-slider"
+                                />
+                                <div className="ruler-info">
+                                    <span>{Math.round(rulerLength)}px</span>
+                                    <span className="px-cm">{(rulerLength / 30).toFixed(1)} px/cm</span>
+                                </div>
                             </div>
-                            <div className="control-group">
-                                <label>Xoay:</label>
-                                <button onClick={() => rotateRuler(-5)}>↶ -5°</button>
-                                <span>{rulerAngle}°</span>
-                                <button onClick={() => rotateRuler(5)}>↷ +5°</button>
-                                <button onClick={() => setRulerAngle(90)}>90°</button>
+
+                            <div className="angle-controls">
+                                <label>Xoay thước:</label>
+                                <div className="angle-buttons">
+                                    <button onClick={() => rotateRuler(-5)}>↺ -5°</button>
+                                    <span className="angle-value">{rulerAngle}°</span>
+                                    <button onClick={() => rotateRuler(5)}>↻ +5°</button>
+                                    <button onClick={() => setRulerAngle(90)}>90°</button>
+                                    <button onClick={() => setRulerAngle(0)}>0°</button>
+                                </div>
                             </div>
                         </div>
+
                         <div className="actions">
                             <button onClick={reset}><RotateCcw /> Làm lại</button>
-                            <button className="calc" onClick={confirmCalibration}>✓ Xác nhận ({(rulerLength / 30).toFixed(1)} px/cm)</button>
+                            <button className="calc" onClick={confirmCalibration}>
+                                ✓ Xác nhận ({(rulerLength / 30).toFixed(1)} px/cm)
+                            </button>
                         </div>
                     </>
                 )}
 
-                {step === 'scan' && image && (
+                {(step === 'scan' || step === 'result') && image && (
                     <>
                         <div className="guide-box">
-                            🔍 <strong>Bước 2: Quét rập</strong><br />
-                            <small>Tỷ lệ: {pixelsPerCm?.toFixed(2)} px/cm | Tự động loại bỏ vật thể chạm viền (thước kẻ)</small>
+                            {step === 'scan' ? '🔍 Bước 2: Quét rập' : '✅ Kết quả'}<br />
+                            <small>Tỷ lệ: <strong>{pixelsPerCm?.toFixed(2)} px/cm</strong></small>
                         </div>
+
                         <div className="canvas-box">
                             <canvas ref={canvasRef} />
                             {loading && <div className="overlay"><div className="spinner"></div>🔍 Đang quét...</div>}
                         </div>
-                        <div className="actions">
-                            <button onClick={reset}><RotateCcw /> Làm lại</button>
-                            <button onClick={() => setStep('calibrate')}>← Hiệu chuẩn lại</button>
-                            <button className="calc" disabled={loading} onClick={scanAndCalc}><Ruler /> Quét & Tính</button>
-                        </div>
-                    </>
-                )}
 
-                {step === 'result' && area !== null && (
-                    <>
-                        <div className="canvas-box"><canvas ref={canvasRef} /></div>
-                        <div className="result-box">
-                            <h3>✅ Kết quả</h3>
-                            <div className="result-grid">
-                                <div className="result-item"><span>Diện tích</span><strong>{area.toFixed(2)} cm²</strong></div>
-                                <div className="result-item"><span>Diện tích</span><strong>{(area / 10000).toFixed(4)} m²</strong></div>
-                                <div className="result-item"><span>Tỷ lệ</span><strong>{pixelsPerCm?.toFixed(2)} px/cm</strong></div>
-                                <div className="result-item"><span>Số đỉnh</span><strong>{polygonPoints.length}</strong></div>
+                        {step === 'scan' && (
+                            <div className="actions">
+                                <button onClick={reset}><RotateCcw /> Làm lại</button>
+                                <button onClick={() => setStep('calibrate')}>← Hiệu chuẩn lại</button>
+                                <button className="calc" disabled={loading} onClick={scanAndCalc}><Ruler /> Quét & Tính</button>
                             </div>
-                        </div>
-                        <div className="actions">
-                            <button onClick={reset}><RotateCcw /> Đo rập khác</button>
-                            <button onClick={() => { setStep('scan'); setPolygonPoints([]); setArea(null); }}>← Quét lại</button>
-                        </div>
+                        )}
+
+                        {step === 'result' && area !== null && (
+                            <>
+                                <div className="result-box">
+                                    <h3>Kết quả</h3>
+                                    <div className="result-grid">
+                                        <div className="result-item"><span>Diện tích</span><strong>{area.toFixed(2)} cm²</strong></div>
+                                        <div className="result-item"><span>m²</span><strong>{(area / 10000).toFixed(4)}</strong></div>
+                                        <div className="result-item"><span>px/cm</span><strong>{pixelsPerCm?.toFixed(2)}</strong></div>
+                                        <div className="result-item"><span>Đỉnh</span><strong>{polygonPoints.length}</strong></div>
+                                    </div>
+                                </div>
+                                <div className="actions">
+                                    <button onClick={reset}><RotateCcw /> Đo rập khác</button>
+                                    <button onClick={() => { setStep('scan'); setPolygonPoints([]); setArea(null); }}>← Quét lại</button>
+                                </div>
+                            </>
+                        )}
                     </>
                 )}
             </main>
@@ -434,24 +474,47 @@ export default function ViewMain({ user, onLogout }) {
                 .upload-area button:disabled { opacity: 0.5; cursor: not-allowed; }
                 .hidden { display: none; }
                 .guide-box { background: #e3f2fd; border-left: 4px solid #2196f3; padding: 15px; margin-bottom: 15px; border-radius: 8px; line-height: 1.6; }
-                .canvas-box { position: relative; display: flex; justify-content: center; background: #2d2d2d; border-radius: 12px; overflow: hidden; margin-bottom: 15px; min-height: 300px; }
+                .canvas-box { position: relative; display: flex; justify-content: center; background: #2d2d2d; border-radius: 12px; overflow: hidden; margin-bottom: 15px; min-height: 300px; touch-action: none; /* Quan trọng cho mobile */ }
                 .canvas-box canvas { max-width: 100%; height: auto; display: block; }
                 .overlay { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); display: flex; flex-direction: column; align-items: center; justify-content: center; color: white; gap: 10px; }
                 .spinner { width: 40px; height: 40px; border: 4px solid rgba(255,255,255,0.3); border-top-color: white; border-radius: 50%; animation: spin 1s linear infinite; }
                 @keyframes spin { to { transform: rotate(360deg); } }
-                .ruler-controls { display: flex; flex-direction: column; gap: 12px; padding: 20px; background: #f8f9fa; border-radius: 12px; margin-bottom: 15px; }
-                .control-group { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-                .control-group label { font-weight: 600; min-width: 100px; color: #333; }
-                .control-group span { min-width: 70px; text-align: center; font-family: monospace; background: white; padding: 6px; border-radius: 6px; border: 1px solid #ddd; }
-                .control-group button { padding: 8px 16px; border: 1px solid #ddd; background: white; border-radius: 6px; cursor: pointer; }
+                
+                /* CONTROLS PANEL */
+                .controls-panel { background: #f8f9fa; border-radius: 12px; padding: 20px; margin-bottom: 20px; display: flex; flex-direction: column; gap: 20px; }
+                .slider-group { display: flex; flex-direction: column; gap: 10px; }
+                .slider-group label { font-weight: 600; color: #333; font-size: 14px; }
+                .ruler-slider { width: 100%; height: 8px; border-radius: 4px; background: #ddd; outline: none; -webkit-appearance: none; }
+                .ruler-slider::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 28px; height: 28px; border-radius: 50%; background: #667eea; cursor: pointer; border: 3px solid white; box-shadow: 0 2px 6px rgba(0,0,0,0.3); }
+                .ruler-slider::-moz-range-thumb { width: 28px; height: 28px; border-radius: 50%; background: #667eea; cursor: pointer; border: 3px solid white; box-shadow: 0 2px 6px rgba(0,0,0,0.3); }
+                .ruler-info { display: flex; gap: 15px; align-items: center; }
+                .ruler-info span { font-family: monospace; background: white; padding: 6px 12px; border-radius: 6px; border: 1px solid #ddd; font-weight: 600; color: #333; }
+                .px-cm { color: #667eea !important; background: #e3f2fd !important; border-color: #667eea !important; }
+                
+                .angle-controls { display: flex; flex-direction: column; gap: 10px; }
+                .angle-controls label { font-weight: 600; color: #333; font-size: 14px; }
+                .angle-buttons { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+                .angle-buttons button { padding: 10px 16px; border: 1px solid #ddd; background: white; border-radius: 6px; cursor: pointer; font-size: 14px; }
+                .angle-buttons button:hover { background: #e9ecef; }
+                .angle-value { min-width: 50px; text-align: center; font-family: monospace; background: white; padding: 10px; border-radius: 6px; border: 1px solid #ddd; font-weight: 600; font-size: 16px; }
+                
                 .actions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 20px; }
-                .actions button { display: flex; align-items: center; gap: 6px; padding: 12px 24px; border: 1px solid #ddd; background: white; border-radius: 8px; cursor: pointer; }
+                .actions button { display: flex; align-items: center; gap: 6px; padding: 12px 24px; border: 1px solid #ddd; background: white; border-radius: 8px; cursor: pointer; font-size: 15px; touch-action: manipulation; }
                 .actions button.calc { background: #28a745; color: white; border-color: #28a745; }
+                .actions button:disabled { opacity: 0.5; cursor: not-allowed; }
+                
                 .result-box { background: #d4edda; border: 1px solid #c3e6cb; border-radius: 12px; padding: 24px; margin-bottom: 20px; text-align: center; }
-                .result-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 15px; }
+                .result-box h3 { margin: 0 0 20px 0; color: #155724; }
+                .result-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 15px; }
                 .result-item { background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
-                .result-item span { display: block; font-size: 12px; color: #666; margin-bottom: 5px; }
-                .result-item strong { display: block; font-size: 22px; color: #28a745; }
+                .result-item span { display: block; font-size: 12px; color: #666; margin-bottom: 5px; text-transform: uppercase; }
+                .result-item strong { display: block; font-size: 20px; color: #28a745; }
+                
+                @media (max-width: 600px) { 
+                    .vm-header { flex-direction: column; text-align: center; } 
+                    .controls-panel { padding: 15px; }
+                    .angle-buttons button { padding: 8px 12px; font-size: 13px; }
+                }
             `}</style>
         </div>
     );
