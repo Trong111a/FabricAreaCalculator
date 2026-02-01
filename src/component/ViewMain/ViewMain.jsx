@@ -235,16 +235,25 @@ export default function ViewMain({ user, onLogout }) {
             const hsv = new cv.Mat();
             cv.cvtColor(src, hsv, cv.COLOR_RGBA2RGB);
             cv.cvtColor(hsv, hsv, cv.COLOR_RGB2HSV);
-            const lowerGray = new cv.Mat(hsv.rows, hsv.cols, hsv.type(), [0, 0, 100, 0]);
-            const upperGray = new cv.Mat(hsv.rows, hsv.cols, hsv.type(), [180, 50, 255, 255]);
+
+            // ========== FIX 1: Mở rộng Value range để bắt giấy xám tối hơn ==========
+            // Original: [0, 0, 100, 0] → [180, 50, 255, 255]
+            // Fixed:    [0, 0,  60, 0] → [180, 60, 255, 255]  ← Value từ 60, Sat max 60
+            const lowerGray = new cv.Mat(hsv.rows, hsv.cols, hsv.type(), [0, 0, 60, 0]);
+            const upperGray = new cv.Mat(hsv.rows, hsv.cols, hsv.type(), [180, 60, 255, 255]);
+            // =========================================================================
+
             const mask = new cv.Mat();
             cv.inRange(hsv, lowerGray, upperGray, mask);
+
             const kernelOpen = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(3, 3));
             const cleaned = new cv.Mat();
             cv.morphologyEx(mask, cleaned, cv.MORPH_OPEN, kernelOpen, new cv.Point(-1, -1), 1);
+
             const kernelClose = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(5, 5));
             const filled = new cv.Mat();
             cv.morphologyEx(cleaned, filled, cv.MORPH_CLOSE, kernelClose, new cv.Point(-1, -1), 1);
+
             const contours = new cv.MatVector();
             const hierarchy = new cv.Mat();
             cv.findContours(filled, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
@@ -259,17 +268,29 @@ export default function ViewMain({ user, onLogout }) {
                 const cnt = contours.get(i);
                 const area = cv.contourArea(cnt);
                 const pct = (area / imgArea) * 100;
-                if (pct < 5 || pct > 90) continue;
+
+                // ========== FIX 2: Hạ ngưỡng area từ 5% → 2% ==========
+                // Rập hẹp dài trong ảnh toàn cảnh có thể chỉ chiếm ~2-4% diện tích
+                if (pct < 2 || pct > 90) continue;
+                // ============================================================
+
                 const rect = cv.boundingRect(cnt);
                 const peri = cv.arcLength(cnt, true);
                 const aspectRatio = Math.max(rect.width, rect.height) / Math.min(rect.width, rect.height);
+
                 const touchesBorder = (
                     rect.x <= 10 || rect.y <= 10 ||
                     rect.x + rect.width >= imgW - 10 ||
                     rect.y + rect.height >= imgH - 10
                 );
                 if (touchesBorder) continue;
-                if (aspectRatio > 6) continue;
+
+                // ========== FIX 3: Tăng aspect ratio limit từ 6 → 20 ==========
+                // Rập "chân cổ" dài hẹp có AR thường ~8-15x
+                // Giữ limit ở 20 để vẫn loại bỏ các noise/artifact dài không hợp lệ
+                if (aspectRatio > 20) continue;
+                // ================================================================
+
                 const compactness = (4 * Math.PI * area) / (peri * peri);
                 const score = area * compactness;
                 if (score > maxScore) {
@@ -279,6 +300,7 @@ export default function ViewMain({ user, onLogout }) {
             }
 
             if (!bestCnt) throw new Error('Không tìm thấy rập!');
+
             const peri = cv.arcLength(bestCnt, true);
             const approx = new cv.Mat();
             cv.approxPolyDP(bestCnt, approx, 0.002 * peri, true);
@@ -296,6 +318,7 @@ export default function ViewMain({ user, onLogout }) {
                 hull.delete();
             }
             setPolygonPoints(pts);
+
             let s = 0;
             for (let i = 0; i < pts.length; i++) {
                 const j = (i + 1) % pts.length;
@@ -305,6 +328,7 @@ export default function ViewMain({ user, onLogout }) {
             const areaCm2 = areaPx / (pixelsPerCm * pixelsPerCm);
             setArea(areaCm2);
             setStep('result');
+
             src.delete(); hsv.delete(); lowerGray.delete(); upperGray.delete(); mask.delete();
             kernelOpen.delete(); cleaned.delete(); kernelClose.delete(); filled.delete();
             contours.delete(); hierarchy.delete(); approx.delete();
